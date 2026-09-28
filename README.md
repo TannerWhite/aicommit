@@ -63,7 +63,7 @@ In split mode, `aicommit` prints a summary on exit that lists committed groups w
 |---|---|
 | `-n`, `--dry-run` | Show the proposal and commit nothing. |
 | `-y`, `--yes` | Accept every proposal without prompting. |
-| `-a`, `--all` | Ignore the index and split all changes, staged and unstaged. |
+| `-a`, `--all` | Ignore the index and split all changes, staged and unstaged. Before committing the first accepted group, aicommit unstages everything already staged. |
 | `--backend <name>` | Backend: `command` or `openai`. |
 | `--model <name>` | Model to use. |
 | `--rules <path>` | Rules file for this run. |
