@@ -70,11 +70,17 @@ func (r Runner) StagedPaths() ([]string, error) {
 }
 
 func (r Runner) Add(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
 	_, err := r.Run(nil, append([]string{"add", "-A", "--"}, paths...)...)
 	return err
 }
 
 func (r Runner) RestoreStaged(paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
 	if !r.hasHead() {
 		_, err := r.Run(nil, append([]string{"rm", "--cached", "-r", "-q", "--ignore-unmatch", "--"}, paths...)...)
 		return err

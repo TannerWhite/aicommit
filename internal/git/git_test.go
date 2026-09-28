@@ -48,3 +48,57 @@ func TestAddCommitRestore(t *testing.T) {
 		t.Fatalf("log %q", log)
 	}
 }
+
+func TestEmptyPathLists(t *testing.T) {
+	r := newRepo(t)
+	if err := os.WriteFile(filepath.Join(r.Dir, "u.txt"), []byte("u\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Add(nil); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := r.HasStaged()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("Add(nil) staged files")
+	}
+	if err := r.RestoreStaged(nil); err != nil {
+		t.Fatalf("RestoreStaged(nil): %v", err)
+	}
+}
+
+func TestRestoreStagedWithHead(t *testing.T) {
+	r := newRepo(t)
+	p := filepath.Join(r.Dir, "a.txt")
+	if err := os.WriteFile(p, []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Add([]string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.Commit("feat: a\n", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Add([]string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := r.HasStaged()
+	if err != nil || !ok {
+		t.Fatalf("expected staged: %v %v", ok, err)
+	}
+	if err := r.RestoreStaged([]string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = r.HasStaged()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected nothing staged after restore")
+	}
+}
