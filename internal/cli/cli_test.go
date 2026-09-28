@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func repoDir(t *testing.T) string {
@@ -87,5 +89,44 @@ func TestNoTTYExits2(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
 	if code, _, _ := run(t, dir); code != 2 {
 		t.Fatalf("want 2, got %d", code)
+	}
+}
+
+func TestHelperInterrupt(t *testing.T) {
+	if os.Getenv("AICOMMIT_HELPER_INTERRUPT") != "1" {
+		t.Skip("helper")
+	}
+	os.Exit(Execute([]string{"--yes"}, strings.NewReader(""), os.Stdout, os.Stderr))
+}
+
+func TestInterruptExits2(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Interrupt cannot be sent on windows")
+	}
+	xdg := t.TempDir()
+	dir := repoDir(t)
+	cfg := filepath.Join(xdg, "aicommit")
+	os.MkdirAll(cfg, 0o755)
+	os.WriteFile(filepath.Join(cfg, "config.toml"), []byte(`command = ["sleep", "30"]`), 0o644)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
+	add := exec.Command("git", "add", "a.txt")
+	add.Dir = dir
+	if err := add.Run(); err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command(os.Args[0], "-test.run=^TestHelperInterrupt$")
+	c.Dir = dir
+	c.Env = append(os.Environ(), "AICOMMIT_HELPER_INTERRUPT=1", "XDG_CONFIG_HOME="+xdg, "AICOMMIT_BACKEND=command")
+	var errb bytes.Buffer
+	c.Stderr = &errb
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	c.Process.Signal(os.Interrupt)
+	c.Wait()
+	e := errb.String()
+	if code := c.ProcessState.ExitCode(); code != 2 || !strings.Contains(e, "aicommit: interrupted") || strings.Contains(e, "context canceled") {
+		t.Fatalf("code %d stderr %s", code, e)
 	}
 }

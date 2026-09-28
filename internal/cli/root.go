@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 
 	"github.com/spf13/cobra"
 
@@ -89,19 +90,27 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 			sig := make(chan os.Signal, 1)
 			signal.Notify(sig, os.Interrupt)
 			defer signal.Stop(sig)
+			var interrupted atomic.Bool
+			handled := make(chan struct{})
 			done := make(chan struct{})
 			defer close(done)
 			go func() {
 				select {
 				case <-sig:
+					interrupted.Store(true)
 					cancel() // kills an in-flight backend call
 					a.Interrupt()
 					fmt.Fprintln(stderr, "aicommit: interrupted")
+					close(handled)
 					os.Exit(2)
 				case <-done:
 				}
 			}()
 			err = a.Run(ctx)
+			if interrupted.Load() {
+				<-handled
+				return exitError{2}
+			}
 			if errors.Is(err, app.ErrQuit) {
 				fmt.Fprintln(stderr, "aicommit: quit")
 				return exitError{2}
