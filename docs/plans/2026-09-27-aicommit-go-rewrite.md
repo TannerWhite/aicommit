@@ -3570,7 +3570,7 @@ Not code in this repo. Each step that touches GitHub or the dotfiles needs expli
 - [ ] **Step 1:** Create the public repo and push (confirm first):
 
 ```bash
-gh repo create TannerWhite/aicommit --public --source . --remote origin --push
+gh repo create TannerWhite/aicommit --private --source . --remote origin --push
 ```
 
 - [ ] **Step 2:** Confirm CI is green: `gh run list --limit 3`.
