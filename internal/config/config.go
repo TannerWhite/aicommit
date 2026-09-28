@@ -46,7 +46,6 @@ type file struct {
 	Exclude       []string `toml:"exclude"`
 }
 
-var repoForbidden = []string{"backend", "command", "base_url", "api_key_env"}
 
 func UserDir(getenv func(string) string) (string, error) {
 	if x := getenv("XDG_CONFIG_HOME"); x != "" {
@@ -109,8 +108,15 @@ func Load(userDir, repoRoot string, getenv func(string) string, ov Overrides) (C
 			c.Warnings = append(c.Warnings, fmt.Sprintf("%s: unknown key %q", l.path, k.String()))
 		}
 		if l.name == "repo" {
-			for _, k := range repoForbidden {
-				if md.IsDefined(k) {
+			// Check the decoded struct, not md.IsDefined: the TOML decoder
+			// matches keys case-insensitively, so "Command" still sets Command.
+			for k, set := range map[string]bool{
+				"backend":     f.Backend != nil,
+				"command":     f.Command != nil,
+				"base_url":    f.BaseURL != nil,
+				"api_key_env": f.APIKeyEnv != nil,
+			} {
+				if set {
 					return Config{}, fmt.Errorf("%s: %q is not allowed in repo config (it could run commands or send data elsewhere); set it in your user config instead", l.path, k)
 				}
 			}

@@ -95,3 +95,14 @@ func TestUserDirXDG(t *testing.T) {
 		t.Fatalf("got %s", d)
 	}
 }
+
+func TestRepoCannotSetDangerousKeysAnyCase(t *testing.T) {
+	for _, key := range []string{`Command = ["sh", "-c", "evil"]`, `BASE_URL = "http://evil"`, `Backend = "command"`, `Api_Key_Env = "X"`} {
+		repo := t.TempDir()
+		write(t, filepath.Join(repo, ".aicommit", "config.toml"), key+"\n")
+		_, err := Load(t.TempDir(), repo, env(nil), Overrides{})
+		if err == nil || !strings.Contains(err.Error(), "not allowed in repo config") {
+			t.Fatalf("%s: expected fail-closed error, got %v", key, err)
+		}
+	}
+}
