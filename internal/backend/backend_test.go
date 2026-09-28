@@ -135,3 +135,21 @@ func TestOpenAICapsRawBody(t *testing.T) {
 		t.Fatalf("got %d chars: %.80q", len(err.Error()), err)
 	}
 }
+
+func TestOpenAIRedactsKeyStraddlingTruncation(t *testing.T) {
+	const key = "sk-straddle-0123456789abcdef"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(502)
+		io.WriteString(w, strings.Repeat("x", 500)+key+strings.Repeat("y", 100))
+	}))
+	defer srv.Close()
+	_, err := OpenAI{BaseURL: srv.URL, Model: "m1", APIKey: key}.Generate(context.Background(), "hi")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for i := 8; i <= len(key); i++ {
+		if strings.Contains(err.Error(), key[:i]) {
+			t.Fatalf("key prefix %q leaked: %v", key[:i], err)
+		}
+	}
+}

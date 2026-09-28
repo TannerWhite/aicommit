@@ -51,6 +51,10 @@ func (o OpenAI) Generate(ctx context.Context, prompt string) (string, error) {
 		msg := parsed.Error.Message
 		if msg == "" {
 			msg = strings.TrimSpace(string(raw))
+			// Redact before truncating so a key straddling the cut cannot leak a prefix.
+			if o.APIKey != "" {
+				msg = strings.ReplaceAll(msg, o.APIKey, "[REDACTED]")
+			}
 			if len(msg) > maxRawBody {
 				msg = msg[:maxRawBody] + "..."
 			}
