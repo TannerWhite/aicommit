@@ -71,12 +71,12 @@ func body(r git.Runner, se git.StatusEntry, staged bool) (string, bool, error) {
 	if se.OrigPath != "" {
 		paths = []string{se.OrigPath, se.Path}
 	}
-	out, err := r.Run(nil, append([]string{"diff", "--cached", "-M", "--"}, paths...)...)
+	out, err := r.Run(nil, append([]string{"--literal-pathspecs", "diff", "--cached", "-M", "--"}, paths...)...)
 	if err != nil {
 		return "", false, err
 	}
 	if !staged {
-		wt, err := r.Run(nil, append([]string{"diff", "--"}, paths...)...)
+		wt, err := r.Run(nil, append([]string{"--literal-pathspecs", "diff", "--"}, paths...)...)
 		if err != nil {
 			return "", false, err
 		}

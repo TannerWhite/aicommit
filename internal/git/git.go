@@ -31,7 +31,11 @@ func (r Runner) Run(stdin io.Reader, args ...string) (string, error) {
 	var out, errb bytes.Buffer
 	c.Stdin, c.Stdout, c.Stderr = stdin, &out, &errb
 	if err := c.Run(); err != nil {
-		return out.String(), fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(errb.String()))
+		sub := args[0]
+		if sub == "--literal-pathspecs" && len(args) > 1 {
+			sub = args[1]
+		}
+		return out.String(), fmt.Errorf("git %s: %w: %s", sub, err, strings.TrimSpace(errb.String()))
 	}
 	return out.String(), nil
 }
@@ -69,11 +73,13 @@ func (r Runner) StagedPaths() ([]string, error) {
 	return paths, nil
 }
 
+// Add, RestoreStaged and the change-set diffs pass paths with
+// --literal-pathspecs so names such as app/[id]/page.tsx match only themselves.
 func (r Runner) Add(paths []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
-	_, err := r.Run(nil, append([]string{"add", "-A", "--"}, paths...)...)
+	_, err := r.Run(nil, append([]string{"--literal-pathspecs", "add", "-A", "--"}, paths...)...)
 	return err
 }
 
@@ -82,13 +88,15 @@ func (r Runner) RestoreStaged(paths []string) error {
 		return nil
 	}
 	if !r.hasHead() {
-		_, err := r.Run(nil, append([]string{"rm", "--cached", "-r", "-q", "--ignore-unmatch", "--"}, paths...)...)
+		_, err := r.Run(nil, append([]string{"--literal-pathspecs", "rm", "--cached", "-r", "-q", "--ignore-unmatch", "--"}, paths...)...)
 		return err
 	}
-	_, err := r.Run(nil, append([]string{"restore", "--staged", "--"}, paths...)...)
+	_, err := r.Run(nil, append([]string{"--literal-pathspecs", "restore", "--staged", "--"}, paths...)...)
 	return err
 }
 
+// RestoreAllStaged unstages everything; it relies on the ":/" pathspec magic
+// and so must not run in literal-pathspec mode.
 func (r Runner) RestoreAllStaged() error {
 	if !r.hasHead() {
 		_, err := r.Run(nil, "rm", "--cached", "-r", "-q", "--ignore-unmatch", ":/")

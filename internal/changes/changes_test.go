@@ -201,3 +201,34 @@ func TestBuildBinaryDetection(t *testing.T) {
 		t.Fatalf("binary file not detected: %+v", d)
 	}
 }
+
+func TestBuildTreatsPathsLiterally(t *testing.T) {
+	r := repo(t)
+	write(t, r, "app/[id]/page.tsx", "one\n")
+	write(t, r, "app/i/page.tsx", "two\n")
+	must(t, r, "add", "-A")
+	must(t, r, "commit", "-q", "-m", "init")
+	write(t, r, "app/[id]/page.tsx", "one changed\n")
+	write(t, r, "app/i/page.tsx", "two changed\n")
+	for _, staged := range []bool{false, true} {
+		if staged {
+			must(t, r, "add", "-A")
+		}
+		var st []git.StatusEntry
+		for _, e := range status(t, r) {
+			if e.Path == "app/[id]/page.tsx" {
+				st = append(st, e)
+			}
+		}
+		o := opts()
+		o.Staged = staged
+		set, err := Build(r, st, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e, ok := set.Find("app/[id]/page.tsx")
+		if !ok || !strings.Contains(e.Body, "one changed") || strings.Contains(e.Body, "two") {
+			t.Fatalf("staged=%v body:\n%s", staged, e.Body)
+		}
+	}
+}
