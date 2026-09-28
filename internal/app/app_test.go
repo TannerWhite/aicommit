@@ -188,6 +188,9 @@ func TestSplitSkip(t *testing.T) {
 	if got := log(t, r); len(got) != 1 || got[0] != "docs: add b" {
 		t.Fatalf("log %v", got)
 	}
+	if !strings.Contains(out.String(), "Skipped:\n  commit 1: feat: add a") {
+		t.Fatalf("no skipped line: %s", out.String())
+	}
 	if !strings.Contains(out.String(), "Left uncommitted: a.txt") {
 		t.Fatalf("summary: %s", out.String())
 	}
@@ -280,5 +283,69 @@ func TestSplitRenameStagesBothSides(t *testing.T) {
 	st, _ := r.Run(nil, "status", "--porcelain")
 	if strings.TrimSpace(st) != "" {
 		t.Fatalf("tree not clean: %q", st)
+	}
+}
+
+func TestMergeConflictRefusedSingleMode(t *testing.T) {
+	r := setup(t)
+	write(t, r, "a.txt", "base\n")
+	r.Add([]string{"a.txt"})
+	r.Commit("chore: base\n", false)
+	r.Run(nil, "checkout", "-q", "-b", "other")
+	write(t, r, "a.txt", "other\n")
+	r.Run(nil, "commit", "-qam", "chore: other")
+	r.Run(nil, "checkout", "-q", "main")
+	write(t, r, "a.txt", "main\n")
+	r.Run(nil, "commit", "-qam", "chore: main")
+	r.Run(nil, "merge", "-q", "other")
+	write(t, r, "c.txt", "resolved\n")
+	r.Add([]string{"c.txt"})
+	b := &fake{responses: []string{"feat: x"}}
+	a, _ := newApp(r, b, "", Options{Yes: true})
+	err := a.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "merge conflict") || len(b.prompts) != 0 {
+		t.Fatalf("got %v, prompts %d", err, len(b.prompts))
+	}
+}
+
+func TestInterruptAfterRunPrintsSummaryOnce(t *testing.T) {
+	r := setup(t)
+	write(t, r, "a.txt", "a\n")
+	write(t, r, "b.txt", "b\n")
+	a, out := newApp(r, &fake{responses: []string{twoGroups}}, "", Options{Yes: true})
+	if err := a.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	a.Interrupt()
+	if n := strings.Count(out.String(), "===== aicommit summary ====="); n != 1 {
+		t.Fatalf("summary printed %d times: %s", n, out.String())
+	}
+}
+
+func TestInterruptWaitsForInFlightOperation(t *testing.T) {
+	r := setup(t)
+	a, _ := newApp(r, &fake{}, "", Options{Yes: true})
+	locked, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		a.opMu.Lock()
+		close(locked)
+		<-release
+		a.opMu.Unlock()
+	}()
+	<-locked
+	go func() {
+		a.Interrupt()
+		close(returned)
+	}()
+	select {
+	case <-returned:
+		t.Fatal("Interrupt returned while a git operation was in flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Interrupt did not return after the operation finished")
 	}
 }

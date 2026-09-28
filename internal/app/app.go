@@ -34,7 +34,10 @@ type App struct {
 	Interactive bool
 	Opts        Options
 
-	mu        sync.Mutex
+	opMu      sync.Mutex // held for a group's whole stage/check/commit sequence
+	mu        sync.Mutex // guards the fields below
+	printed   bool
+	skipped   []string
 	pending   []string // paths staged by aicommit and not yet committed
 	all       []string // every path in the split change set
 	done      map[string]bool
@@ -46,6 +49,19 @@ func (a *App) Run(ctx context.Context) error {
 	if !a.Interactive && !a.Opts.Yes && !a.Opts.DryRun {
 		return ErrNoTTY
 	}
+	out, err := a.Git.Run(nil, "status", "--porcelain=v2", "-z", "--untracked-files=all")
+	if err != nil {
+		return err
+	}
+	st, err := git.ParseStatusV2(out)
+	if err != nil {
+		return err
+	}
+	for _, e := range st {
+		if e.Unmerged {
+			return fmt.Errorf("unresolved merge conflict in %s; resolve it before running aicommit", e.Path)
+		}
+	}
 	hasStaged, err := a.Git.HasStaged()
 	if err != nil {
 		return err
@@ -53,7 +69,7 @@ func (a *App) Run(ctx context.Context) error {
 	if hasStaged && !a.Opts.All {
 		return a.single(ctx)
 	}
-	return a.split(ctx)
+	return a.split(ctx, st)
 }
 
 func (a *App) changeOpts(staged bool) changes.Options {
@@ -146,23 +162,10 @@ func (a *App) single(ctx context.Context) error {
 	}
 }
 
-func (a *App) split(ctx context.Context) error {
-	out, err := a.Git.Run(nil, "status", "--porcelain=v2", "-z", "--untracked-files=all")
-	if err != nil {
-		return err
-	}
-	st, err := git.ParseStatusV2(out)
-	if err != nil {
-		return err
-	}
+func (a *App) split(ctx context.Context, st []git.StatusEntry) error {
 	if len(st) == 0 {
 		fmt.Fprintln(a.Out, "aicommit: nothing to commit (working tree clean)")
 		return nil
-	}
-	for _, e := range st {
-		if e.Unmerged {
-			return fmt.Errorf("unresolved merge conflict in %s; resolve it before running aicommit", e.Path)
-		}
 	}
 	set, err := changes.Build(a.Git, st, a.changeOpts(false))
 	if err != nil {
@@ -256,6 +259,9 @@ func (a *App) group(ctx context.Context, set changes.Set, i, n int, c plan.Commi
 		switch ch {
 		case 's':
 			fmt.Fprintf(a.Out, "aicommit: skipped commit %d, files left unstaged\n", i+1)
+			a.mu.Lock()
+			a.skipped = append(a.skipped, fmt.Sprintf("commit %d: %s", i+1, subject(msg)))
+			a.mu.Unlock()
 			return nil
 		case 'q':
 			return ErrQuit
@@ -281,6 +287,8 @@ func (a *App) group(ctx context.Context, set changes.Set, i, n int, c plan.Commi
 }
 
 func (a *App) commitGroup(msg string, paths, files []string, edit bool) (bool, error) {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
 	if a.Opts.All && !a.cleared {
 		if err := a.Git.RestoreAllStaged(); err != nil {
 			return false, err
@@ -350,7 +358,10 @@ func (a *App) undo() {
 }
 
 // Interrupt undoes the in-progress group's staging and prints the summary.
+// It waits for any in-flight git operation of the current group to finish.
 func (a *App) Interrupt() {
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
 	a.undo()
 	a.printSummary()
 }
@@ -358,9 +369,10 @@ func (a *App) Interrupt() {
 func (a *App) printSummary() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.done == nil {
+	if a.done == nil || a.printed {
 		return
 	}
+	a.printed = true
 	fmt.Fprintln(a.Out, "\n===== aicommit summary =====")
 	fmt.Fprintln(a.Out, "Committed:")
 	if len(a.committed) == 0 {
@@ -368,6 +380,12 @@ func (a *App) printSummary() {
 	}
 	for _, c := range a.committed {
 		fmt.Fprintf(a.Out, "  %s\n", c)
+	}
+	if len(a.skipped) > 0 {
+		fmt.Fprintln(a.Out, "Skipped:")
+		for _, s := range a.skipped {
+			fmt.Fprintf(a.Out, "  %s\n", s)
+		}
 	}
 	var left []string
 	for _, p := range a.all {
