@@ -1,0 +1,50 @@
+package git
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func newRepo(t *testing.T) Runner {
+	t.Helper()
+	r := Runner{Dir: t.TempDir()}
+	for _, a := range [][]string{
+		{"init", "-q", "-b", "main"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+		{"config", "commit.gpgsign", "false"},
+	} {
+		if _, err := r.Run(nil, a...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return r
+}
+
+func TestAddCommitRestore(t *testing.T) {
+	r := newRepo(t)
+	os.WriteFile(filepath.Join(r.Dir, "a.txt"), []byte("a\n"), 0o644)
+	if err := r.Add([]string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := r.HasStaged(); !ok {
+		t.Fatal("expected staged")
+	}
+	if err := r.RestoreStaged([]string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := r.HasStaged(); ok {
+		t.Fatal("expected nothing staged after restore on unborn branch")
+	}
+	r.Add([]string{"a.txt"})
+	sha, _, err := r.Commit("feat: add a\n", false)
+	if err != nil || sha == "" {
+		t.Fatalf("commit: %v %q", err, sha)
+	}
+	log, _ := r.Run(nil, "log", "--format=%s")
+	if strings.TrimSpace(log) != "feat: add a" {
+		t.Fatalf("log %q", log)
+	}
+}
