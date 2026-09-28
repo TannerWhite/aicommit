@@ -1,0 +1,11 @@
+{{.Rules}}
+
+Write a git commit message for the changes below. Output ONLY the raw commit message text: no markdown code fences, no commentary, no surrounding quotes. Use a single-line subject in the form "type(scope): description" (omit scope if the change is global). Add a short body (2-5 bullet points) only if the changes touch multiple concerns or are large; otherwise output the subject line only.
+{{- if .Feedback}}
+
+The previous attempt was rejected with this feedback. Incorporate it:
+{{.Feedback}}
+{{- end}}
+
+--- CHANGES ---
+{{.Changes}}

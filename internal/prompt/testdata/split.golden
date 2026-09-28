@@ -1,0 +1,15 @@
+RULES
+
+You are splitting uncommitted changes into logically separate git commits, following the "one logical change per commit" rule above. Group the files below into one or more commits. Each group must be a cohesive, atomic change with its own commit message that follows the rules.
+
+Respond with ONLY one JSON object, no markdown code fences and no commentary, with this exact shape:
+{"commits": [{"files": ["path/one", "path/two"], "message": "type(scope): subject\n\n- optional bullet body"}]}
+
+Use the exact file paths shown after "=== FILE:". For renamed files use the new path. Every listed file must appear in exactly one commit. Files marked "(contents excluded)" or binary must still be placed in a commit based on their name. If everything is one logical change, return a single commit.
+
+Your previous response was invalid. Fix these problems:
+file b.go missing
+
+--- FILES AND CHANGES ---
+=== FILE: a.go ===
+

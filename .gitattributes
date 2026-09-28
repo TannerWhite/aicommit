@@ -1,0 +1,2 @@
+internal/prompt/testdata/*.golden -text
+internal/prompt/*.tmpl -text
