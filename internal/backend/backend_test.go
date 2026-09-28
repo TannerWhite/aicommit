@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,8 +59,8 @@ func TestCommandBackend(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	if _, err = helper(t, "hang").Generate(ctx, "x"); err == nil {
-		t.Fatal("expected timeout")
+	if _, err = helper(t, "hang").Generate(ctx, "x"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded, got %v", err)
 	}
 	if runtime.GOOS != "windows" {
 		if _, err := exec.LookPath("sh"); err == nil {
@@ -105,7 +106,32 @@ func TestOpenAIBackend(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if _, err := b.Generate(ctx, "slow"); err == nil {
-		t.Fatal("expected timeout")
+	if _, err := b.Generate(ctx, "slow"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded, got %v", err)
+	}
+}
+
+func TestOpenAIRedactsKeyFromEchoedBody(t *testing.T) {
+	const key = "sk-echo-789"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		io.WriteString(w, "proxy error, got header: "+r.Header.Get("Authorization"))
+	}))
+	defer srv.Close()
+	_, err := OpenAI{BaseURL: srv.URL, Model: "m1", APIKey: key}.Generate(context.Background(), "hi")
+	if err == nil || !strings.Contains(err.Error(), "500") || !strings.Contains(err.Error(), "[REDACTED]") || strings.Contains(err.Error(), key) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestOpenAICapsRawBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(502)
+		io.WriteString(w, strings.Repeat("x", 2000))
+	}))
+	defer srv.Close()
+	_, err := OpenAI{BaseURL: srv.URL, Model: "m1"}.Generate(context.Background(), "hi")
+	if err == nil || strings.Count(err.Error(), "x") > 512+1 || !strings.HasSuffix(err.Error(), "...") {
+		t.Fatalf("got %d chars: %.80q", len(err.Error()), err)
 	}
 }

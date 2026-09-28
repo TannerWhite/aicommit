@@ -36,7 +36,7 @@ func (o OpenAI) Generate(ctx context.Context, prompt string) (string, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", o.Name(), err)
+		return "", o.redact(fmt.Errorf("%s: %w", o.Name(), err))
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -51,11 +51,34 @@ func (o OpenAI) Generate(ctx context.Context, prompt string) (string, error) {
 		msg := parsed.Error.Message
 		if msg == "" {
 			msg = strings.TrimSpace(string(raw))
+			if len(msg) > maxRawBody {
+				msg = msg[:maxRawBody] + "..."
+			}
 		}
-		return "", fmt.Errorf("%s: HTTP %d: %s", o.Name(), resp.StatusCode, msg)
+		return "", o.redact(fmt.Errorf("%s: HTTP %d: %s", o.Name(), resp.StatusCode, msg))
 	}
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("%s: response had no choices", o.Name())
 	}
 	return parsed.Choices[0].Message.Content, nil
 }
+
+// maxRawBody caps how much of a non-JSON error body is echoed into an error.
+const maxRawBody = 512
+
+// redact hides the API key in err's text (servers or proxies may echo the
+// Authorization header) while keeping err unwrappable via errors.Is.
+func (o OpenAI) redact(err error) error {
+	if o.APIKey == "" || !strings.Contains(err.Error(), o.APIKey) {
+		return err
+	}
+	return redactedError{err: err, key: o.APIKey}
+}
+
+type redactedError struct {
+	err error
+	key string
+}
+
+func (e redactedError) Error() string { return strings.ReplaceAll(e.err.Error(), e.key, "[REDACTED]") }
+func (e redactedError) Unwrap() error { return e.err }
