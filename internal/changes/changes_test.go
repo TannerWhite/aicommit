@@ -3,6 +3,7 @@ package changes
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -111,5 +112,92 @@ func TestBuildTotalCap(t *testing.T) {
 	b, _ := set.Find("b.txt")
 	if !strings.Contains(b.Body, "bbbb") {
 		t.Fatal("small entry should be kept")
+	}
+}
+
+func must(t *testing.T, r git.Runner, args ...string) string {
+	t.Helper()
+	out, err := r.Run(nil, args...)
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return out
+}
+
+func TestBuildExcludedRenameSource(t *testing.T) {
+	r := repo(t)
+	base := "TOKEN=firstsecret\n" + strings.Repeat("KEY=value\n", 20)
+	write(t, r, ".env", base)
+	must(t, r, "add", ".env")
+	must(t, r, "commit", "-q", "-m", "init")
+	must(t, r, "mv", ".env", "config.txt")
+	write(t, r, "config.txt", base+"OTHER=secondsecret\n")
+	must(t, r, "add", "config.txt")
+	st, err := git.ParseNameStatusZ(must(t, r, "diff", "--cached", "-z", "--name-status", "-M"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st) != 1 || st[0].OrigPath != ".env" {
+		t.Fatalf("expected a rename from .env: %+v", st)
+	}
+	o := opts()
+	o.Staged = true
+	set, err := Build(r, st, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := set.Render()
+	if strings.Contains(out, "firstsecret") || strings.Contains(out, "secondsecret") {
+		t.Fatalf("secret leaked:\n%s", out)
+	}
+	if !strings.Contains(out, "(contents excluded)") {
+		t.Fatalf("missing excluded marker:\n%s", out)
+	}
+}
+
+func TestBuildUntrackedSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on windows")
+	}
+	r := repo(t)
+	target := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(target, []byte("TOKEN=linksecret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(r.Dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	set, err := Build(r, status(t, r), opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := set.Render()
+	if strings.Contains(out, "linksecret") {
+		t.Fatalf("symlink target contents leaked:\n%s", out)
+	}
+	if !strings.Contains(out, target) {
+		t.Fatalf("missing link target path:\n%s", out)
+	}
+}
+
+func TestBuildBinaryDetection(t *testing.T) {
+	r := repo(t)
+	write(t, r, "notes.txt", "start\n")
+	write(t, r, "data.bin", "\x00\x01\x02")
+	must(t, r, "add", ".")
+	must(t, r, "commit", "-q", "-m", "init")
+	write(t, r, "notes.txt", "start\nBinary files a and b differ\n")
+	write(t, r, "data.bin", "\x00\x03\x04\x05")
+	set, err := Build(r, status(t, r), opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, ok := set.Find("notes.txt")
+	if !ok || n.Binary || !strings.Contains(n.Body, "+Binary files a and b differ") {
+		t.Fatalf("text file misdetected: %+v", n)
+	}
+	d, ok := set.Find("data.bin")
+	if !ok || !d.Binary || d.Body != "" {
+		t.Fatalf("binary file not detected: %+v", d)
 	}
 }
