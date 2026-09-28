@@ -94,6 +94,8 @@ func Validate(p Plan, paths []string) []string {
 		n := i + 1
 		if strings.TrimSpace(c.Message) == "" {
 			errs = append(errs, fmt.Sprintf("commit %d has an empty message", n))
+		} else if strings.TrimSpace(strings.SplitN(c.Message, "\n", 2)[0]) == "" {
+			errs = append(errs, fmt.Sprintf("commit %d has an empty subject line", n))
 		}
 		if len(c.Files) == 0 {
 			errs = append(errs, fmt.Sprintf("commit %d has no files", n))

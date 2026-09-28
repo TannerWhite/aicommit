@@ -32,12 +32,19 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("unexpected %v", errs)
 	}
 	cases := map[string]Plan{
-		`"b.go" is missing`:               {Commits: []Commit{{Files: []string{"a.go"}, Message: "feat: a"}}},
-		`"a.go" appears in more than one`: {Commits: []Commit{{Files: []string{"a.go", "b.go"}, Message: "x: y"}, {Files: []string{"a.go"}, Message: "x: z"}}},
-		`"c.go" is not in the change set`: {Commits: []Commit{{Files: []string{"a.go", "b.go", "c.go"}, Message: "x: y"}}},
-		`commit 1 has an empty message`:   {Commits: []Commit{{Files: []string{"a.go", "b.go"}, Message: "  \n"}}},
-		`commit 1 has no files`:           {Commits: []Commit{{Message: "x: y"}, {Files: paths, Message: "x: y"}}},
-		`plan has no commits`:             {},
+		`"b.go" is missing`:                  {Commits: []Commit{{Files: []string{"a.go"}, Message: "feat: a"}}},
+		`"a.go" appears in more than one`:    {Commits: []Commit{{Files: []string{"a.go", "b.go"}, Message: "x: y"}, {Files: []string{"a.go"}, Message: "x: z"}}},
+		`"c.go" is not in the change set`:    {Commits: []Commit{{Files: []string{"a.go", "b.go", "c.go"}, Message: "x: y"}}},
+		`commit 1 has an empty message`:      {Commits: []Commit{{Files: []string{"a.go", "b.go"}, Message: "  \n"}}},
+		`commit 1 has no files`:              {Commits: []Commit{{Message: "x: y"}, {Files: paths, Message: "x: y"}}},
+		`commit 1 has an empty subject line`: {Commits: []Commit{{Files: paths, Message: "\nbody"}}},
+		`plan has no commits`:                {},
+	}
+	for _, m := range []string{"\nbody", "   \nfeat: x"} {
+		errs := strings.Join(Validate(Plan{Commits: []Commit{{Files: paths, Message: m}}}, paths), "\n")
+		if !strings.Contains(errs, "commit 1 has an empty subject line") {
+			t.Errorf("message %q: want empty subject line error, got %q", m, errs)
+		}
 	}
 	for want, p := range cases {
 		errs := strings.Join(Validate(p, paths), "\n")
