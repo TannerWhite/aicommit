@@ -256,8 +256,8 @@ the index.
 - Per file: content or diff over `max_file_bytes` is truncated with a
   `[truncated: N bytes omitted]` marker.
 - Total: if the combined change set exceeds `max_total_bytes`, the largest
-  entries are replaced with their `git diff --stat` line until the total
-  fits.
+  entries are replaced with an `[omitted: N bytes, over total size limit]`
+  marker until the total fits.
 
 ### Flags
 
