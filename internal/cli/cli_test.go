@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,7 +108,9 @@ func TestInterruptExits2(t *testing.T) {
 	dir := repoDir(t)
 	cfg := filepath.Join(xdg, "aicommit")
 	os.MkdirAll(cfg, 0o755)
-	os.WriteFile(filepath.Join(cfg, "config.toml"), []byte(`command = ["sleep", "30"]`), 0o644)
+	// The backend touches ready once it starts, which is after signal.Notify.
+	ready := filepath.Join(t.TempDir(), "ready")
+	os.WriteFile(filepath.Join(cfg, "config.toml"), []byte(fmt.Sprintf(`command = ["sh", "-c", %q]`, `touch "`+ready+`"; exec sleep 30`)), 0o644)
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644)
 	add := exec.Command("git", "add", "a.txt")
 	add.Dir = dir
@@ -122,7 +125,16 @@ func TestInterruptExits2(t *testing.T) {
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			c.Process.Kill()
+			c.Wait()
+			t.Fatalf("backend never started; stderr %s", errb.String())
+		}
+	}
 	c.Process.Signal(os.Interrupt)
 	c.Wait()
 	e := errb.String()
