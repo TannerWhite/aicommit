@@ -34,15 +34,16 @@ type App struct {
 	Interactive bool
 	Opts        Options
 
-	opMu      sync.Mutex // held for a group's whole stage/check/commit sequence
-	mu        sync.Mutex // guards the fields below
-	printed   bool
-	skipped   []string
-	pending   []string // paths staged by aicommit and not yet committed
-	all       []string // every path in the split change set
-	done      map[string]bool
-	committed []string
-	cleared   bool
+	opMu        sync.Mutex // held for a group's whole stage/check/commit sequence
+	interrupted bool       // set by Interrupt; guarded by opMu
+	mu          sync.Mutex // guards the fields below
+	printed     bool
+	skipped     []string
+	pending     []string // paths staged by aicommit and not yet committed
+	all         []string // every path in the split change set
+	done        map[string]bool
+	committed   []string
+	cleared     bool
 }
 
 func (a *App) Run(ctx context.Context) error {
@@ -289,6 +290,9 @@ func (a *App) group(ctx context.Context, set changes.Set, i, n int, c plan.Commi
 func (a *App) commitGroup(msg string, paths, files []string, edit bool) (bool, error) {
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
+	if a.interrupted {
+		return false, ErrQuit
+	}
 	if a.Opts.All && !a.cleared {
 		if err := a.Git.RestoreAllStaged(); err != nil {
 			return false, err
@@ -358,10 +362,12 @@ func (a *App) undo() {
 }
 
 // Interrupt undoes the in-progress group's staging and prints the summary.
-// It waits for any in-flight git operation of the current group to finish.
+// It waits for any in-flight git operation of the current group to finish,
+// and no later group touches the index once it has run.
 func (a *App) Interrupt() {
 	a.opMu.Lock()
 	defer a.opMu.Unlock()
+	a.interrupted = true
 	a.undo()
 	a.printSummary()
 }

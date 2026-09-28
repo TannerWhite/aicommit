@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -348,4 +350,72 @@ func TestInterruptWaitsForInFlightOperation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Interrupt did not return after the operation finished")
 	}
+}
+
+func TestInterruptStopsLaterGroups(t *testing.T) {
+	r := setup(t)
+	write(t, r, "a.txt", "a\n")
+	write(t, r, "b.txt", "b\n")
+	a, _ := newApp(r, &fake{responses: []string{twoGroups}}, "", Options{Yes: true})
+	a.Interrupt()
+	if err := a.Run(context.Background()); !errors.Is(err, ErrQuit) {
+		t.Fatalf("want ErrQuit, got %v", err)
+	}
+	if s := staged(t, r); len(s) != 0 {
+		t.Fatalf("staged after interrupt: %v", s)
+	}
+	if got := log(t, r); got != nil {
+		t.Fatalf("committed after interrupt: %v", got)
+	}
+}
+
+func TestInterruptMidSplitRun(t *testing.T) {
+	r := setup(t)
+	write(t, r, "a.txt", "a\n")
+	write(t, r, "b.txt", "b\n")
+	write(t, r, "c.txt", "c\n")
+	marker, release := filepath.Join(t.TempDir(), "marker"), filepath.Join(t.TempDir(), "release")
+	hook(t, r, "post-commit", `if [ ! -f "`+marker+`" ]; then touch "`+marker+`"; while [ ! -f "`+release+`" ]; do sleep 0.01; done; fi`)
+	three := `{"commits":[{"files":["a.txt"],"message":"feat: add a"},{"files":["b.txt"],"message":"feat: add b"},{"files":["c.txt"],"message":"feat: add c"}]}`
+	a, _ := newApp(r, &fake{responses: []string{three}}, "", Options{Yes: true})
+	a.Out = &lockedWriter{w: io.Discard}
+	atInterrupt := make(chan int, 1)
+	go func() {
+		for {
+			if _, err := os.Stat(marker); err == nil {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		go func() {
+			// Interrupt blocks on the in-flight commit; long enough to be queued on opMu.
+			time.Sleep(100 * time.Millisecond)
+			os.WriteFile(release, nil, 0o644)
+		}()
+		a.Interrupt()
+		atInterrupt <- len(log(t, r))
+	}()
+	err := a.Run(context.Background())
+	n := <-atInterrupt
+	if got := log(t, r); len(got) != n {
+		t.Fatalf("commits after interrupt: had %d at interrupt, now %v", n, got)
+	}
+	if !errors.Is(err, ErrQuit) {
+		t.Fatalf("want ErrQuit, got %v", err)
+	}
+	if s := staged(t, r); len(s) != 0 {
+		t.Fatalf("staged after interrupt: %v", s)
+	}
+}
+
+// lockedWriter serializes writes from the run and the interrupt goroutine.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
