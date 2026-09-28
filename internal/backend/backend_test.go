@@ -77,7 +77,7 @@ func TestOpenAIBackend(t *testing.T) {
 	const key = "sk-secret-123"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer "+key {
-			http.Error(w, `{"error":{"message":"bad auth"}}`, 401)
+			http.Error(w, `{"error":{"message":"bad auth"}}`, http.StatusUnauthorized)
 			return
 		}
 		var req struct {

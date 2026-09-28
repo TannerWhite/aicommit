@@ -1,0 +1,28 @@
+version: 2
+project_name: aicommit
+builds:
+  - main: ./cmd/aicommit
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/TannerWhite/aicommit/internal/cli.Version={{.Version}}
+      - -X github.com/TannerWhite/aicommit/internal/cli.Commit={{.ShortCommit}}
+      - -X github.com/TannerWhite/aicommit/internal/cli.Date={{.Date}}
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md]
+checksum:
+  name_template: checksums.txt
+changelog:
+  use: git
+  groups:
+    - { title: Features, regexp: '^feat(\(.+\))?!?:', order: 0 }
+    - { title: Fixes, regexp: '^fix(\(.+\))?!?:', order: 1 }
+    - { title: Other, order: 999 }
+  filters:
+    exclude: ['^docs', '^test', '^chore', '^ci']
