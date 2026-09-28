@@ -46,7 +46,6 @@ type file struct {
 	Exclude       []string `toml:"exclude"`
 }
 
-
 func UserDir(getenv func(string) string) (string, error) {
 	if x := getenv("XDG_CONFIG_HOME"); x != "" {
 		return filepath.Join(x, "aicommit"), nil
