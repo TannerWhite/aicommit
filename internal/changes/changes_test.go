@@ -47,7 +47,7 @@ func opts() Options {
 }
 
 func TestExcluded(t *testing.T) {
-	cases := map[string]bool{".env": true, "app/.env.local": true, "certs/a.pem": true, "id_rsa.pub": true, "main.go": false, "env.go": false}
+	cases := map[string]bool{".env": true, "app/.env.local": true, "certs/a.pem": true, "id_rsa.pub": true, "main.go": false, "env.go": false, ".ENV": true, "certs/Server.PEM": true, "ID_RSA": true, "MAIN.GO": false}
 	for p, want := range cases {
 		if got := Excluded(p, DefaultExcludes); got != want {
 			t.Errorf("%s: got %v", p, got)
