@@ -105,7 +105,7 @@ func TestRestoreStagedWithHead(t *testing.T) {
 
 func TestAddTreatsPathsLiterally(t *testing.T) {
 	r := newRepo(t)
-	for _, p := range []string{"app/[id]/page.tsx", "app/i/page.tsx", "x*.txt", "xy.txt"} {
+	for _, p := range []string{"app/[id]/page.tsx", "app/i/page.tsx", "x[y].txt", "xy.txt"} {
 		os.MkdirAll(filepath.Join(r.Dir, filepath.Dir(p)), 0o755)
 		if err := os.WriteFile(filepath.Join(r.Dir, p), []byte(p+"\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -121,15 +121,15 @@ func TestAddTreatsPathsLiterally(t *testing.T) {
 			}
 			os.WriteFile(filepath.Join(r.Dir, "xy.txt"), []byte("changed\n"), 0o644)
 		}
-		if err := r.Add([]string{"app/[id]/page.tsx", "x*.txt"}); err != nil {
+		if err := r.Add([]string{"app/[id]/page.tsx", "x[y].txt"}); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := r.StagedPaths()
-		if strings.Join(got, ",") != "app/[id]/page.tsx,x*.txt" {
+		if strings.Join(got, ",") != "app/[id]/page.tsx,x[y].txt" {
 			t.Fatalf("head=%v staged %v", withHead, got)
 		}
 		r.Add([]string{"app/i/page.tsx", "xy.txt"})
-		if err := r.RestoreStaged([]string{"app/[id]/page.tsx", "x*.txt"}); err != nil {
+		if err := r.RestoreStaged([]string{"app/[id]/page.tsx", "x[y].txt"}); err != nil {
 			t.Fatal(err)
 		}
 		got, _ = r.StagedPaths()
